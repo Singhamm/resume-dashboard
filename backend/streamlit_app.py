@@ -17,7 +17,6 @@ Base.metadata.create_all(bind=engine)
 BASE_DIR = os.path.dirname(__file__)                           # points to backend/
 TEMPLATE_DIR = os.path.join(BASE_DIR, "app", "templates")      # backend/app/templates
 templates = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
-templates.globals["datetime"] = datetime                       # now {{ datetime.utcnow() }} works
 
 # 3. Streamlit page config
 st.set_page_config(page_title="Resume Formatter Demo", layout="wide")

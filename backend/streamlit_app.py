@@ -1,22 +1,25 @@
+import os
 import streamlit as st
 from sqlalchemy.orm import Session
 from io import BytesIO
 from reportlab.pdfgen.canvas import Canvas
 from reportlab.lib.pagesizes import letter
+from jinja2 import Environment, FileSystemLoader
 
 from app import parser, crud, schemas
 from app.database import SessionLocal, Base, engine
-from jinja2 import Environment, FileSystemLoader
 
-# Ensure DB tables exist
+# Ensure database tables exist
 Base.metadata.create_all(bind=engine)
 
-# Jinja2 setup (for preview only)
-templates = Environment(loader=FileSystemLoader("app/templates"))
+# Configure Jinja2 to load templates from the correct path
+BASE_DIR = os.path.dirname(__file__)       # backend/
+TEMPLATE_DIR = os.path.join(BASE_DIR, "app", "templates")
+templates = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
 
 # Streamlit page config
 st.set_page_config(page_title="Resume Formatter Demo", layout="wide")
-st.title("📝 Resume Formatter Demo (All-in-One with ReportLab PDF)")
+st.title("📝 Resume Formatter Demo (All-in-One)")
 
 # DB session generator
 def get_db():
@@ -41,7 +44,7 @@ if uploaded_file:
 
     st.success("✅ Parsed & saved!")
 
-    # Show raw JSON
+    # Show raw JSON\   
     st.subheader("Parsed Data")
     st.json(resume_record)
 
@@ -50,15 +53,16 @@ if uploaded_file:
     html = templates.get_template("resume.html").render(**resume_record)
     st.components.v1.html(html, height=400, scrolling=True)
 
-    # Download PDF using ReportLab
+    # Download PDF
     st.subheader("Download PDF")
     buffer = BytesIO()
     pdf = Canvas(buffer, pagesize=letter)
-    # Simple layout
+    # Title and contact
     pdf.drawString(50, 750, resume_record["personal"].get("name", "Your Name"))
-    pdf.drawString(50, 735, resume_record["personal"].get("email", "Email") +
-                              " | " + resume_record["personal"].get("phone", "Phone"))
+    contact = f"{resume_record['personal'].get('email','')} | {resume_record['personal'].get('phone','')}"
+    pdf.drawString(50, 735, contact)
     y = 710
+    # Experience entries
     for exp in resume_record.get("experience", []):
         pdf.drawString(50, y, f"{exp.get('title')} at {exp.get('client')}")
         y -= 15

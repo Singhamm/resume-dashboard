@@ -103,8 +103,9 @@
   </section>
 
   <footer>
-    Printed on {{ macros.datetime.strftime(macros.datetime.utcnow(), '%d %b %Y') }}
+  Printed on {{ datetime.utcnow().strftime('%d %b %Y') }}
   </footer>
+
 
 </body>
 </html>

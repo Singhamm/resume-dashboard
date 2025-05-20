@@ -8,3 +8,5 @@ pdfminer.six
 rapidfuzz
 python-docx
 sqlalchemy
+reportlab
+

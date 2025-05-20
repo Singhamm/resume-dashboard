@@ -1,8 +1,10 @@
 # backend/app/parser.py
 
 import io
+import re
 from pdfminer.high_level import extract_text as extract_pdf_text
 from docx import Document
+from rapidfuzz import fuzz
 
 def extract_text(file) -> str:
     """
@@ -33,3 +35,28 @@ def extract_text(file) -> str:
             return content.decode('utf-8', errors='ignore')
         except:
             return str(content)
+
+
+def parse_resume(text: str) -> dict:
+    """
+    Stub parser that extracts date anchors and groups blocks.
+    Right now it returns minimal structure; you can expand this logic.
+    """
+    # Find all date ranges (e.g., Jan 2020 – Dec 2021)
+    date_pattern = r'([A-Za-z]{3,9}\s+\d{4})\s*[–-]\s*([A-Za-z]{3,9}\s+\d{4}|Present)'
+    anchors = re.findall(date_pattern, text)
+
+    # For now, just stick the full text in summary and empty lists
+    return {
+        "personal": {
+            "name": "",
+            "email": "",
+            "phone": "",
+            "location": "",
+            "summary": text[:200]  # first 200 chars as demo
+        },
+        "experience": [],
+        "education": [],
+        "skills": [],
+        "certifications": []
+    }

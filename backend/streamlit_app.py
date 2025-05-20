@@ -1,5 +1,6 @@
 import os
 import streamlit as st
+from datetime import datetime
 from sqlalchemy.orm import Session
 from io import BytesIO
 from reportlab.pdfgen.canvas import Canvas
@@ -13,9 +14,10 @@ from app.database import SessionLocal, Base, engine
 Base.metadata.create_all(bind=engine)
 
 # Configure Jinja2 to load templates from the correct path
-BASE_DIR = os.path.dirname(__file__)       # backend/
+BASE_DIR = os.path.dirname(__file__)
 TEMPLATE_DIR = os.path.join(BASE_DIR, "app", "templates")
 templates = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
+templates.globals["datetime"] = datetime
 
 # Streamlit page config
 st.set_page_config(page_title="Resume Formatter Demo", layout="wide")

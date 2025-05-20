@@ -1,10 +1,10 @@
-fastapi
-uvicorn[standard]
+fastapi       # can stay
+uvicorn       # can stay
 python-multipart
 jinja2
 weasyprint
-requests
 streamlit
 pdfminer.six
 rapidfuzz
-docx
+python-docx
+sqlalchemy

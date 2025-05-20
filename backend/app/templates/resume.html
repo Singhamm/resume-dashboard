@@ -1,16 +1,18 @@
+<!-- backend/app/templates/resume.html -->
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>{{ personal.name }}</title>
+  <title>{{ personal.name or "Resume" }}</title>
   <style>
     body { font-family: Arial, sans-serif; margin: 40px; }
-    header { display:flex; justify-content:space-between; align-items:center; }
-    h1 { margin-bottom:0; }
-    h2 { margin-top:30px; margin-bottom:5px; border-bottom:1px solid #333; }
-    ul { margin:5px 0 10px 20px; }
-    section { margin-bottom:20px; }
-    footer { position:fixed; bottom:20px; width:100%; text-align:right; font-size:0.8em; }
+    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+    h1 { margin: 0; font-size: 24px; }
+    header p { margin: 2px 0; font-size: 12px; }
+    h2 { margin-top: 30px; margin-bottom: 5px; font-size: 18px; border-bottom: 1px solid #333; padding-bottom: 2px; }
+    ul { margin: 5px 0 15px 20px; }
+    section { margin-bottom: 20px; }
+    footer { position: fixed; bottom: 20px; width: 100%; text-align: right; font-size: 10px; color: #666; }
   </style>
 </head>
 <body>
@@ -31,6 +33,7 @@
     <p>{{ summary }}</p>
   </section>
 
+  {% if responsibilities %}
   <section>
     <h2>Responsibilities</h2>
     <ul>
@@ -39,7 +42,9 @@
       {% endfor %}
     </ul>
   </section>
+  {% endif %}
 
+  {% if major_clients %}
   <section>
     <h2>Major Clients</h2>
     <ul>
@@ -48,7 +53,9 @@
       {% endfor %}
     </ul>
   </section>
+  {% endif %}
 
+  {% if certifications %}
   <section>
     <h2>Certifications</h2>
     <ul>
@@ -57,7 +64,9 @@
       {% endfor %}
     </ul>
   </section>
+  {% endif %}
 
+  {% if achievements %}
   <section>
     <h2>Achievements</h2>
     <ul>
@@ -66,7 +75,9 @@
       {% endfor %}
     </ul>
   </section>
+  {% endif %}
 
+  {% if skills %}
   <section>
     <h2>Skills</h2>
     <ul>
@@ -75,7 +86,9 @@
       {% endfor %}
     </ul>
   </section>
+  {% endif %}
 
+  {% if experience %}
   <section>
     <h2>Experience</h2>
     {% for exp in experience %}
@@ -92,7 +105,9 @@
       </div>
     {% endfor %}
   </section>
+  {% endif %}
 
+  {% if education %}
   <section>
     <h2>Education</h2>
     <ul>
@@ -101,11 +116,11 @@
       {% endfor %}
     </ul>
   </section>
+  {% endif %}
 
   <footer>
-  Printed on {{ datetime.utcnow().strftime('%d %b %Y') }}
+    Printed on {{ datetime.utcnow().strftime('%d %b %Y') }}
   </footer>
-
 
 </body>
 </html>

@@ -14,13 +14,12 @@ MONTHS = {
 }
 
 def extract_text(file) -> str:
-    """Handle both FastAPI UploadFile (.file) and Streamlit UploadedFile."""
+    """Handle both FastAPI UploadFile (.file) and Streamlit UploadedFile (.read())."""
     try:
         content = file.file.read()
     except AttributeError:
         file.seek(0)
         content = file.read()
-
     name = getattr(file, 'filename', None) or getattr(file, 'name', '')
     name = name.lower()
     if name.endswith('.pdf'):
@@ -36,45 +35,41 @@ def extract_text(file) -> str:
 
 def parse_resume(text: str) -> dict:
     """
-    Section-based resume parser:
-    - personal: name, title, contact
-    - summary, responsibilities, clients, certifications, achievements, skills, education
-    - experience list with period/title/company/bullets/tools
+    Parses the resume text into a JSON:
+      - personal: name, title, contact
+      - summary (tries multiple headings)
+      - responsibilities, major_clients, certifications, achievements, skills, education
+      - experience list (detects any date-range heading)
     """
-    # --- 1) Header Extraction ---
+    # --- Header extraction ---
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    name  = lines[0] if len(lines) > 0 else ""
-    title = lines[1] if len(lines) > 1 else ""
-
-    # Phone, Email via regex
+    name  = lines[0] if len(lines)>0 else ""
+    title = lines[1] if len(lines)>1 else ""
+    # contact: phone, email, location
     phone_match = re.search(r'\+?\d[\d\s-]{7,}\d', text)
     phone = phone_match.group(0).strip() if phone_match else ""
     email_match = re.search(r'[\w\.-]+@[\w\.-]+', text)
     email = email_match.group(0).strip() if email_match else ""
-
-    # Location = the line immediately after the one containing the email
     location = ""
     if email:
         for idx, ln in enumerate(lines):
             if email in ln and idx+1 < len(lines):
                 location = lines[idx+1]
                 break
-
     contact = " | ".join(filter(None, [phone, email, location]))
 
-    # --- 2) Section helper ---
+    # --- Section helper ---
     def section(key):
         pat = re.compile(rf"^{key}:?", re.IGNORECASE | re.MULTILINE)
         m = pat.search(text)
         if not m:
             return ""
         start = m.end()
-        # find next heading
         nxt = re.search(r"^[A-Za-z][A-Za-z &]+:?", text[start:], re.MULTILINE)
         end = start + nxt.start() if nxt else len(text)
         return text[start:end].strip()
 
-    # --- 3) Bullet extractor (skip empties) ---
+    # --- Bullet extractor ---
     def bullets(block):
         items = []
         for ln in block.splitlines():
@@ -85,39 +80,50 @@ def parse_resume(text: str) -> dict:
                     items.append(txt)
         return items
 
-    # --- 4) Extract simple sections ---
-    summary          = section("Professional Summary") or section("Objective")
-    responsibilities = bullets(section("Responsibilities"))
-    major_clients    = bullets(section("Major Clients"))
-    certifications   = bullets(section("Certifications"))
-    achievements     = bullets(section("Achievements"))
-    skills           = bullets(section("Main competence areas") or section("Skills"))
-    education        = bullets(section("Education"))
+    # --- Summary (try multiple keys) ---
+    summary = ""
+    for key in ["Professional Summary", "Summary", "Objective", "Profile"]:
+        blk = section(key)
+        if blk:
+            summary = blk
+            break
 
-    # --- 5) Experience parsing ---
-    exp_text = section("Career and projects") or text
+    # --- List sections with fallback keys ---
+    def pick_list(keys):
+        for key in keys:
+            blk = section(key)
+            if blk:
+                return bullets(blk)
+        return []
+
+    responsibilities  = pick_list(["Responsibilities", 
+                                   "Roles and Responsibilities", 
+                                   "Key Responsibilities"])
+    major_clients     = pick_list(["Major Clients", "Clients"])
+    certifications    = pick_list(["Certifications"])
+    achievements      = pick_list(["Achievements", "Awards"])
+    skills            = pick_list(["Skills", "Main competence areas", "Technical Skills"])
+    education         = pick_list(["Education", "Academic Qualification"])
+
+    # --- Experience parsing ---
+    exp_text = section("Experience") or section("Career and Projects") or text
     date_pat = r"([A-Za-z]{3,9}\s+\d{4})\s*[–-]\s*([A-Za-z]{3,9}\s+\d{4}|Present)"
     segments = []
     for m in re.finditer(date_pat, exp_text):
         seg_start = m.start()
-        # take until two newlines or end
         seg_end   = exp_text.find("\n\n", seg_start)
         seg       = exp_text[seg_start : seg_end if seg_end>0 else len(exp_text)]
 
-        # Period
         period = f"{m.group(1)} – {m.group(2)}"
-        # Title & Company (split at first '–')
         first_line = seg.splitlines()[0]
         parts = first_line.split("–", 1)
         job_title = parts[0].strip()
         company   = parts[1].strip() if len(parts)>1 else ""
 
-        # Remaining lines
         after = [ln.strip() for ln in seg.splitlines()[1:] if ln.strip()]
-        tools_list = []
-        bullets_list = []
+        tools_list, bullets_list = [], []
         for ln in after:
-            if re.search(r"tools & technology", ln, re.IGNORECASE):
+            if "tools & technology" in ln.lower():
                 tools_list = [t.strip() for t in ln.split(":",1)[1].split(",")]
             else:
                 bullets_list.append(ln)
@@ -130,13 +136,12 @@ def parse_resume(text: str) -> dict:
             "tools":   tools_list
         })
 
-    # Sort newest → oldest
+    # Sort newest→oldest
     def dt_key(x):
         mon, yr = x["period"].split("–")[0].split()
         return int(yr)*100 + MONTHS.get(mon[:3].lower(), 1)
     segments.sort(key=dt_key, reverse=True)
 
-    # --- 6) Final JSON ---
     return {
         "personal": {
             "name":    name,

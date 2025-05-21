@@ -1,10 +1,12 @@
+# backend/app/parser.py
+
 import io
 import re
 from pdfminer.high_level import extract_text as extract_pdf_text
 from docx import Document
 from rapidfuzz import fuzz
 
-# Month mapping for date sorting
+# Month mapping for sorting experience
 MONTHS = {
     "jan": 1, "feb": 2, "mar": 3, "apr": 4,
     "may": 5, "jun": 6, "jul": 7, "aug": 8,
@@ -12,9 +14,7 @@ MONTHS = {
 }
 
 def extract_text(file) -> str:
-    """
-    Extract text from FastAPI UploadFile or Streamlit UploadedFile.
-    """
+    """Handle both FastAPI UploadFile (.file) and Streamlit UploadedFile."""
     try:
         content = file.file.read()
     except AttributeError:
@@ -25,7 +25,7 @@ def extract_text(file) -> str:
     name = name.lower()
     if name.endswith('.pdf'):
         return extract_pdf_text(io.BytesIO(content))
-    elif name.endswith('.docx') or name.endswith('.doc'):
+    elif name.endswith(('.docx','.doc')):
         doc = Document(io.BytesIO(content))
         return "\n".join(p.text for p in doc.paragraphs)
     else:
@@ -36,18 +36,33 @@ def extract_text(file) -> str:
 
 def parse_resume(text: str) -> dict:
     """
-    Section-based parser producing a rich JSON structure:
-      - personal: name, title, contact
-      - summary
-      - responsibilities, major_clients, certifications, achievements, skills
-      - experience: list of {period, title, company, bullets, tools}
-      - education
+    Section-based resume parser:
+    - personal: name, title, contact
+    - summary, responsibilities, clients, certifications, achievements, skills, education
+    - experience list with period/title/company/bullets/tools
     """
-    # 1) Name = first non-empty line
-    lines = [l.strip() for l in text.splitlines() if l.strip()]
-    name = lines[0] if lines else ""
+    # --- 1) Header Extraction ---
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    name  = lines[0] if len(lines) > 0 else ""
+    title = lines[1] if len(lines) > 1 else ""
 
-    # 2) Helper to pull out a block under a heading
+    # Phone, Email via regex
+    phone_match = re.search(r'\+?\d[\d\s-]{7,}\d', text)
+    phone = phone_match.group(0).strip() if phone_match else ""
+    email_match = re.search(r'[\w\.-]+@[\w\.-]+', text)
+    email = email_match.group(0).strip() if email_match else ""
+
+    # Location = the line immediately after the one containing the email
+    location = ""
+    if email:
+        for idx, ln in enumerate(lines):
+            if email in ln and idx+1 < len(lines):
+                location = lines[idx+1]
+                break
+
+    contact = " | ".join(filter(None, [phone, email, location]))
+
+    # --- 2) Section helper ---
     def section(key):
         pat = re.compile(rf"^{key}:?", re.IGNORECASE | re.MULTILINE)
         m = pat.search(text)
@@ -59,69 +74,81 @@ def parse_resume(text: str) -> dict:
         end = start + nxt.start() if nxt else len(text)
         return text[start:end].strip()
 
-    summary = section("Professional Summary") or section("Objective")
-
+    # --- 3) Bullet extractor (skip empties) ---
     def bullets(block):
-        return [l.strip("•*- ").strip() 
-                for l in block.splitlines() if l.strip().startswith(("•","-","*"))]
+        items = []
+        for ln in block.splitlines():
+            m = re.match(r'^[•\-\*]\s*(.*)', ln.strip())
+            if m:
+                txt = m.group(1).strip()
+                if txt:
+                    items.append(txt)
+        return items
 
-    responsibilities  = bullets(section("Responsibilities"))
-    major_clients     = bullets(section("Major Clients"))
-    certifications    = bullets(section("Certifications"))
-    achievements      = bullets(section("Achievements"))
-    skills            = bullets(section("Main competence areas") or section("Skills"))
-    education         = bullets(section("Education"))
+    # --- 4) Extract simple sections ---
+    summary          = section("Professional Summary") or section("Objective")
+    responsibilities = bullets(section("Responsibilities"))
+    major_clients    = bullets(section("Major Clients"))
+    certifications   = bullets(section("Certifications"))
+    achievements     = bullets(section("Achievements"))
+    skills           = bullets(section("Main competence areas") or section("Skills"))
+    education        = bullets(section("Education"))
 
-    # 3) Experience: look under "Career and projects"
+    # --- 5) Experience parsing ---
     exp_text = section("Career and projects") or text
     date_pat = r"([A-Za-z]{3,9}\s+\d{4})\s*[–-]\s*([A-Za-z]{3,9}\s+\d{4}|Present)"
     segments = []
     for m in re.finditer(date_pat, exp_text):
         seg_start = m.start()
-        seg_end = exp_text.find("\n\n", seg_start)
-        seg = exp_text[seg_start : (seg_end if seg_end>0 else len(exp_text))]
+        # take until two newlines or end
+        seg_end   = exp_text.find("\n\n", seg_start)
+        seg       = exp_text[seg_start : seg_end if seg_end>0 else len(exp_text)]
 
+        # Period
         period = f"{m.group(1)} – {m.group(2)}"
+        # Title & Company (split at first '–')
         first_line = seg.splitlines()[0]
         parts = first_line.split("–", 1)
-        title   = parts[0].strip()
-        company = parts[1].strip() if len(parts)>1 else ""
+        job_title = parts[0].strip()
+        company   = parts[1].strip() if len(parts)>1 else ""
 
-        lines_after = [l.strip() for l in seg.splitlines()[1:] if l.strip()]
-        tools = []
+        # Remaining lines
+        after = [ln.strip() for ln in seg.splitlines()[1:] if ln.strip()]
+        tools_list = []
         bullets_list = []
-        for line in lines_after:
-            if "tools & technology" in line.lower():
-                tools = [t.strip() for t in line.split(":",1)[1].split(",")]
+        for ln in after:
+            if re.search(r"tools & technology", ln, re.IGNORECASE):
+                tools_list = [t.strip() for t in ln.split(":",1)[1].split(",")]
             else:
-                bullets_list.append(line)
+                bullets_list.append(ln)
 
         segments.append({
-            "period":   period,
-            "title":    title,
-            "company":  company,
-            "bullets":  bullets_list,
-            "tools":    tools
+            "period":  period,
+            "title":   job_title,
+            "company": company,
+            "bullets": bullets_list,
+            "tools":   tools_list
         })
 
-    # sort newest → oldest
-    def keyfn(x):
+    # Sort newest → oldest
+    def dt_key(x):
         mon, yr = x["period"].split("–")[0].split()
         return int(yr)*100 + MONTHS.get(mon[:3].lower(), 1)
-    segments.sort(key=keyfn, reverse=True)
+    segments.sort(key=dt_key, reverse=True)
 
+    # --- 6) Final JSON ---
     return {
         "personal": {
             "name":    name,
-            "title":   "",       # you can add logic to parse title if present
-            "contact": ""        # same for email/phone
+            "title":   title,
+            "contact": contact
         },
-        "summary":        summary,
+        "summary":          summary,
         "responsibilities": responsibilities,
-        "major_clients":  major_clients,
-        "certifications": certifications,
-        "achievements":   achievements,
-        "skills":         skills,
-        "experience":     segments,
-        "education":      education
+        "major_clients":    major_clients,
+        "certifications":   certifications,
+        "achievements":     achievements,
+        "skills":           skills,
+        "experience":       segments,
+        "education":        education
     }
